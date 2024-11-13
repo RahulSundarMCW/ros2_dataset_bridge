@@ -143,15 +143,15 @@ class NuscenesVisualizeNode(object):
         
 
         if is_publish_image:
-            image_pub_name = f"{channel}_image_pub"
+            image_pub_name = f"/nuscenes/{channel}/image"
             if image_pub_name not in self.ros_interface.__pub_registry__:
-                self.ros_interface.create_publisher(Image, f"/nuscenes/{channel}/image", 1)
-            info_pub_name  = f"{channel}_info_pub"
+                self.ros_interface.create_publisher(Image, image_pub_name, 1)
+            info_pub_name  = f"/nuscenes/{channel}/camera_info"
             if info_pub_name not in self.ros_interface.__pub_registry__:
-                self.ros_interface.create_publisher(CameraInfo, f"/nuscenes/{channel}/camera_info", 1)
+                self.ros_interface.create_publisher(CameraInfo, info_pub_name, 1)
 
             image = cv2.imread(image_path)
-            self.ros_interface.publish_image(image, cam_intrinsic, f"/nuscenes/{channel}/image", frame_id=channel)
+            self.ros_interface.publish_image(image, cam_intrinsic, image_pub_name, frame_id=channel)
 
     def _lidar_publish(self, lidar_data, is_publish_lidar=False):
         """Publish lidar related data, first publish pose/tf information and ego pose, then publish lidar if needed
