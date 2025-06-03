@@ -74,3 +74,24 @@ colcon build --symlink-install --packages-select=ros2_dataset_bridge # rebuildin
 Please check each datasets.
 
 The tf trees are also well constructed. We have a predefined rviz file for visualizing all topics and tf trees.
+
+### Mapping from `.pkl` keys to `input_dict` fields in `get_data_info`
+
+| `input_dict` Key       | Source Key in `.pkl` (`info[...]`)          | Notes / Description |
+|------------------------|----------------------------------------------|----------------------|
+| `sample_idx`           | `token`                                      | Unique sample identifier |
+| `pts_filename`         | `lidar_path`                                 | Path to LiDAR point cloud file |
+| `sweeps`               | `sweeps`                                     | List of previous LiDAR sweeps |
+| `ego2global_translation` | `ego2global_translation`                  | Global position of ego vehicle |
+| `ego2global_rotation`  | `ego2global_rotation`                        | Global rotation of ego vehicle (quaternion) |
+| `prev_idx`             | `prev`                                       | Previous sample token |
+| `next_idx`             | `next`                                       | Next sample token |
+| `scene_token`          | `scene_token`                                | ID for scene to which this sample belongs |
+| `can_bus`              | `can_bus` + computed from `ego2global_*`     | Overwritten with: translation, quaternion, yaw (rad + deg) |
+| `frame_idx`            | `frame_idx`                                  | Frame index in the scene |
+| `timestamp`            | `timestamp`                                  | Converted to seconds from microseconds |
+| `img_filename`         | `cams[<camera>]["data_path"]`                | One image path per camera (if `use_camera=True`) |
+| `lidar2img`            | Derived from `sensor2lidar_rotation` + `cam_intrinsic` | Computed 4x4 matrices per camera |
+| `cam_intrinsic`        | `cams[<camera>]["cam_intrinsic"]`            | Camera intrinsics (3x3 or padded to 4x4) |
+| `lidar2cam`            | Derived from `sensor2lidar_rotation` + `sensor2lidar_translation` | Inverse of camera-to-lidar transform |
+| `ann_info`             | `self.get_ann_info(index)`                  | Only added if `test_mode=False` |
