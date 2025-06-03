@@ -75,23 +75,143 @@ Please check each datasets.
 
 The tf trees are also well constructed. We have a predefined rviz file for visualizing all topics and tf trees.
 
-### Mapping from `.pkl` keys to `input_dict` fields in `get_data_info`
+# 🧾 BEVFormer Data Extraction from NuScenes and CAN Bus
 
-| `input_dict` Key       | Source Key in `.pkl` (`info[...]`)          | Notes / Description |
-|------------------------|----------------------------------------------|----------------------|
-| `sample_idx`           | `token`                                      | Unique sample identifier |
-| `pts_filename`         | `lidar_path`                                 | Path to LiDAR point cloud file |
-| `sweeps`               | `sweeps`                                     | List of previous LiDAR sweeps |
-| `ego2global_translation` | `ego2global_translation`                  | Global position of ego vehicle |
-| `ego2global_rotation`  | `ego2global_rotation`                        | Global rotation of ego vehicle (quaternion) |
-| `prev_idx`             | `prev`                                       | Previous sample token |
-| `next_idx`             | `next`                                       | Next sample token |
-| `scene_token`          | `scene_token`                                | ID for scene to which this sample belongs |
-| `can_bus`              | `can_bus` + computed from `ego2global_*`     | Overwritten with: translation, quaternion, yaw (rad + deg) |
-| `frame_idx`            | `frame_idx`                                  | Frame index in the scene |
-| `timestamp`            | `timestamp`                                  | Converted to seconds from microseconds |
-| `img_filename`         | `cams[<camera>]["data_path"]`                | One image path per camera (if `use_camera=True`) |
-| `lidar2img`            | Derived from `sensor2lidar_rotation` + `cam_intrinsic` | Computed 4x4 matrices per camera |
-| `cam_intrinsic`        | `cams[<camera>]["cam_intrinsic"]`            | Camera intrinsics (3x3 or padded to 4x4) |
-| `lidar2cam`            | Derived from `sensor2lidar_rotation` + `sensor2lidar_translation` | Inverse of camera-to-lidar transform |
-| `ann_info`             | `self.get_ann_info(index)`                  | Only added if `test_mode=False` |
+This document describes the fields extracted from the **NuScenes** and **CAN Bus** datasets inside the `_fill_trainval_infos()` function of the `create_data.py` script in the BEVFormer TensorRT pipeline.
+
+---
+
+## 🔹 1. Source: `sample.json`
+
+Each `sample` is a frame containing references to sensor data, annotations, and scene information.
+
+| Extracted Field     | Stored in `info` Key      |
+| ------------------- | ------------------------- |
+| `token`             | `token`                   |
+| `prev`              | `prev`                    |
+| `next`              | `next`                    |
+| `scene_token`       | `scene_token`             |
+| `timestamp`         | `timestamp`               |
+| `data['LIDAR_TOP']` | Used to get LiDAR token   |
+| `data['CAM_*']`     | Used to get camera tokens |
+| `anns`              | Used to fetch annotations |
+
+---
+
+## 🔹 2. Source: `calibrated_sensor.json`
+
+This provides the **extrinsics** between the sensor and the ego frame.
+
+| Extracted Field | Stored in `info` Key              |
+| --------------- | --------------------------------- |
+| `translation`   | `lidar2ego_translation`           |
+| `rotation`      | `lidar2ego_rotation` (quaternion) |
+
+---
+
+## 🔹 3. Source: `ego_pose.json`
+
+Describes the ego vehicle pose in the global frame.
+
+| Extracted Field | Stored in `info` Key               |
+| --------------- | ---------------------------------- |
+| `translation`   | `ego2global_translation`           |
+| `rotation`      | `ego2global_rotation` (quaternion) |
+
+---
+
+## 🔹 4. Source: `sample_data.json`
+
+This file holds metadata about each sensor recording (e.g., LiDAR or camera).
+
+| Extracted Field   | Stored in `info` Key                      |
+| ----------------- | ----------------------------------------- |
+| `token` (used)    | Used to call `nusc.get_sample_data()`     |
+| File path         | `lidar_path`, or `cams[cam]['data_path']` |
+| `prev`            | Used to get previous sweeps               |
+| Camera intrinsics | `cams[cam]['cam_intrinsic']`              |
+
+---
+
+## 🔹 5. Source: Camera (`CAM_*`) Data
+
+Each sample has six camera images. For each:
+
+* The intrinsic and extrinsic parameters are extracted.
+* Used to populate the `cams` dictionary.
+
+| Extracted  | Stored in                     |
+| ---------- | ----------------------------- |
+| Intrinsics | `cams[cam]["cam_intrinsic"]`  |
+| Extrinsics | `cams[cam]` (pose & rotation) |
+
+---
+
+## 🔹 6. Source: `sample_annotation.json` *(only if `test == False`)*
+
+Bounding box annotations and metadata per object in a frame.
+
+| Extracted Field       | Stored in `info` Key                     |
+| --------------------- | ---------------------------------------- |
+| `token` (used)        | Used to get annotation                   |
+| `num_lidar_pts`       | `num_lidar_pts`                          |
+| `num_radar_pts`       | `num_radar_pts`                          |
+| `category_name`       | `gt_names` (after mapping)               |
+| Bounding box geometry | `gt_boxes` (center, size, yaw)           |
+| Velocity              | `gt_velocity` (projected to LiDAR frame) |
+| Validity flag         | `valid_flag`                             |
+
+---
+
+## 🔹 7. Source: CAN Bus (`can_bus.pkl`)
+
+Accessed via the `_get_can_bus_info()` function. Usually includes ego vehicle motion data.
+
+| Likely Field in CAN Bus | Stored in `info["can_bus"]` |
+| ----------------------- | --------------------------- |
+| `position`              | `position`                  |
+| `orientation`           | `orientation` (quaternion)  |
+| `velocity`              | `velocity` or `speed`       |
+| `acceleration`          | `acceleration`              |
+| `rotation_rate`         | `rotation_rate`             |
+
+---
+
+## 🔹 8. Derived / Computed Fields
+
+These fields are calculated during preprocessing:
+
+| Computed From                         | Stored in `info` Key |
+| ------------------------------------- | -------------------- |
+| Frame count in current scene          | `frame_idx`          |
+| Transforms from previous LiDAR sweeps | `sweeps`             |
+
+---
+
+## ✅ Final `info` Dictionary Keys
+
+| Key                      | Description                                            | Source JSON                   |
+| ------------------------ | ------------------------------------------------------ | ----------------------------- |
+| `lidar_path`             | File path to top LiDAR frame                           | `sample_data.json`            |
+| `token`                  | Unique identifier for the sample                       | `sample.json`                 |
+| `prev`, `next`           | Tokens for previous and next frames                    | `sample.json`                 |
+| `can_bus`                | Ego vehicle CAN info (velocity, accel, etc.)           | `can_bus.pkl`                 |
+| `frame_idx`              | Index of frame in the scene                            | Computed                      |
+| `scene_token`            | Scene grouping identifier                              | `sample.json`                 |
+| `lidar2ego_translation`  | LiDAR sensor position in ego frame                     | `calibrated_sensor.json`      |
+| `lidar2ego_rotation`     | LiDAR sensor rotation in ego frame                     | `calibrated_sensor.json`      |
+| `ego2global_translation` | Ego vehicle position in global frame                   | `ego_pose.json`               |
+| `ego2global_rotation`    | Ego vehicle rotation in global frame                   | `ego_pose.json`               |
+| `timestamp`              | Time when the sample was recorded                      | `sample.json`                 |
+| `cams`                   | Dictionary of 6 cameras with intrinsics and extrinsics | `sample_data.json` + computed |
+| `sweeps`                 | Past LiDAR sweeps used for temporal modeling           | `sample_data.json`            |
+| `gt_boxes`               | GT boxes: \[x, y, z, w, l, h, yaw]                     | `sample_annotation.json`      |
+| `gt_names`               | Mapped category names                                  | `sample_annotation.json`      |
+| `gt_velocity`            | Object velocities in LiDAR frame                       | `sample_annotation.json`      |
+| `num_lidar_pts`          | LIDAR point count per box                              | `sample_annotation.json`      |
+| `num_radar_pts`          | RADAR point count per box                              | `sample_annotation.json`      |
+| `valid_flag`             | Whether the object has sufficient sensor points        | Computed                      |
+
+---
+
+Let me know if you’d like a visual diagram or example `info` dictionary too!
