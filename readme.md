@@ -213,5 +213,89 @@ These fields are calculated during preprocessing:
 | `valid_flag`             | Whether the object has sufficient sensor points        | Computed                      |
 
 ---
+---
+---
 
-Let me know if you’d like a visual diagram or example `info` dictionary too!
+
+### ✅ **Fields from the `.pkl` file (`info`) directly assigned to `input_dict`**
+
+These fields exist in each item of `self.data_infos`, which is loaded from the `.pkl`.
+
+| `result` key             | Source from `.pkl` (`info`)        |
+| ------------------------ | ---------------------------------- |
+| `sample_idx`             | `info["token"]`                    |
+| `pts_filename`           | `info["lidar_path"]`               |
+| `sweeps`                 | `info["sweeps"]`                   |
+| `ego2global_translation` | `info["ego2global_translation"]`   |
+| `ego2global_rotation`    | `info["ego2global_rotation"]`      |
+| `prev_idx`               | `info["prev"]`                     |
+| `next_idx`               | `info["next"]`                     |
+| `scene_token`            | `info["scene_token"]`              |
+| `can_bus`                | `info["can_bus"]` (modified later) |
+| `frame_idx`              | `info["frame_idx"]`                |
+| `timestamp`              | `info["timestamp"] / 1e6`          |
+
+---
+
+### ✅ **Fields conditionally created and added**
+
+These fields are **created and assigned** only if `self.modality['use_camera'] == True`:
+
+| `result` key    | How it's created                                                                               |
+| --------------- | ---------------------------------------------------------------------------------------------- |
+| `img_filename`  | List of `cam_info['data_path']` from each camera                                               |
+| `lidar2img`     | Computed 4×4 matrix: `viewpad @ lidar2cam_rt.T`                                                |
+| `cam_intrinsic` | List of 4×4 padded intrinsics: `viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic` |
+| `lidar2cam`     | Computed 4×4 transformation matrices from lidar to each camera                                 |
+
+---
+
+### ✅ **Field added only during training mode (`self.test_mode == False`)**
+
+| `result` key | Description                     |
+| ------------ | ------------------------------- |
+| `ann_info`   | From `self.get_ann_info(index)` |
+
+---
+
+### ✅ **Field modified (but not newly created)**
+
+These are updated based on ego pose:
+
+| Field     | Description                                                                                        |
+| --------- | -------------------------------------------------------------------------------------------------- |
+| `can_bus` | First 3 values set to `ego2global_translation`, next 4 to quaternion, then 2 yaw angles (rad, deg) |
+|           | - Modified: `can_bus[:3] = translation`, `can_bus[3:7] = quaternion`                               |
+|           | - Added: `can_bus[-2] = yaw_rad`, `can_bus[-1] = yaw_deg`                                          |
+
+---
+
+### 🔁 `result` becomes `input_dict` and is passed to `self.pipeline(input_dict)`
+
+This triggers `pre_pipeline()` and later the composed transform pipeline (e.g., `MultiScaleFlipAug3D`, etc.), which **creates the remaining fields**.
+
+---
+
+### 🧪 Created Later in `pipeline(input_dict)` or `union2one(queue)`
+
+These are not assigned in `get_data_info()`, but are created later in the data pipeline:
+
+| Field                                 | Description                                           |
+| ------------------------------------- | ----------------------------------------------------- |
+| `img`                                 | Tensor stack of camera images, created in `union2one` |
+| `img_metas`                           | Metadata, including `scene_token`, `can_bus`, etc.    |
+| `img_shape`, `ori_shape`, `pad_shape` | Image shape info during transforms                    |
+| `scale_factor`, `img_norm_cfg`        | From image normalization and resize                   |
+| `img_fields`, `bbox3d_fields`, etc.   | From the format bundle & field collectors             |
+| `filename`                            | Image path or point cloud path (depends on collector) |
+| `box_type_3d`, `box_mode_3d`          | Set by detection format transforms                    |
+
+These are typically set in transforms like:
+
+* `DefaultFormatBundle3D`
+* `Collect3D`
+* `NormalizeMultiviewImage`
+* `PadMultiViewImage`
+* `Resize`, etc.
+
+---
