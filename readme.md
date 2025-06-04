@@ -217,7 +217,7 @@ These fields are calculated during preprocessing:
 ---
 
 
-### ✅ **Fields from the `.pkl` file (`info`) directly assigned to `input_dict`**
+# ✅ **Fields from the `.pkl` file (`info`) directly assigned to `input_dict`**
 
 These fields exist in each item of `self.data_infos`, which is loaded from the `.pkl`.
 
@@ -299,3 +299,19 @@ These are typically set in transforms like:
 * `Resize`, etc.
 
 ---
+---
+---
+
+
+# Nuscenes Visualize Node Field → Topic Mapping
+
+|Field	              | Topic	                    |          Type	           |     Notes             |
+| ------------------- | --------------------------- | ------------------------ | --------------------- |
+|ego_rotation         | /tf                         |	tf2_msgs/TFMessage	   | world → base_link     |
+|ego_translation	  | /tf                         |	tf2_msgs/TFMessage	   | world → base_link     |
+|initial_pose	      | /tf                         |	tf2_msgs/TFMessage	   | world → odom          |
+|rotation (camera)	  | /tf                         |	tf2_msgs/TFMessage	   | base_link → CAM_*     |
+|translation (camera) |	/tf                         |	tf2_msgs/TFMessage	   | base_link → CAM_*     |
+|rotation (lidar)	  | /tf                         |	tf2_msgs/TFMessage	   | base_link → LIDAR_TOP |
+|translation (lidar)  | /tf                         |	tf2_msgs/TFMessage	   | base_link → LIDAR_TOP |
+|cam_intrinsic	      | /nuscenes/CAM_*/camera_info	|   sensor_msgs/CameraInfo | Published directly    |
