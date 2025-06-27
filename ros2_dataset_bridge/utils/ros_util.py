@@ -89,7 +89,7 @@ class ROSInterface(Node):
             P: projection matrix [3, 4]. though only [3, 3] is useful.
             frame_id: string, parent frame name.
         """
-        image_msg = self.cv_bridge.cv2_to_imgmsg(image, encoding="passthrough")
+        image_msg = self.cv_bridge.cv2_to_imgmsg(image, encoding="bgr8")
         image_msg.header.frame_id = frame_id
         image_msg.header.stamp = self.get_clock().now().to_msg()
         self.__pub_registry__[image_topic].publish(image_msg)
