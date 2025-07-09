@@ -8,9 +8,10 @@ from .utils import kitti360_utils
 from .utils.ros_util import ROSInterface
 from .utils.nuscenes_utils import NuscenesLoader
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
-from std_msgs.msg import Int32, Bool
+from autoware_custom_msgs.msg import SceneInfo, CanBusData
+from std_msgs.msg import Int32, Bool, Float32MultiArray, String
 from visualization_msgs.msg import MarkerArray
-
+from std_msgs.msg import MultiArrayDimension
 
 """General Class conversion and color definition for Nuscenes
 
@@ -72,6 +73,8 @@ class NuscenesVisualizeNode(object):
 
 
         self.ros_interface.create_publisher(MarkerArray, "/nuscenes/bboxes", 1)
+        self.ros_interface.create_publisher(CanBusData, "/nuscenes/can_bus", 1)
+        self.ros_interface.create_publisher(SceneInfo, "/nuscenes/scene_tokens", 1)
         self.nusc_loader_helper = NuscenesLoader(version=self.nuscenes_version, dataroot=self.nuscenes_dir, verbose=True)
         self.nusc = self.nusc_loader_helper.get_nusc(logger=self.ros_interface.get_logger())
         
@@ -110,6 +113,51 @@ class NuscenesVisualizeNode(object):
         des = self.current_scene["description"]
         print(f"Switch to scenes {self.index}: {des} ")
         self.current_sample = self.nusc.get('sample', self.current_scene['first_sample_token']) 
+
+    def _get_can_bus_info(self, sample):
+        """
+        Extract CAN bus information for the sample.
+        This version mimics the original create_data.py logic exactly.
+        """
+        if self.nusc_can_bus is None:
+            return np.zeros(18)
+        
+        scene_name = self.nusc.get("scene", sample["scene_token"])["name"]
+        sample_timestamp = sample["timestamp"]
+        
+        try:
+            pose_list = self.nusc_can_bus.get_messages(scene_name, "pose")
+            if not pose_list:
+                return np.zeros(18)
+    
+            last_pose = pose_list[0]
+            for i, pose in enumerate(pose_list):
+                if pose["utime"] > sample_timestamp:
+                    break
+                last_pose = pose
+    
+            # Copy to avoid mutating original
+            last_pose_copy = last_pose.copy()
+    
+            can_bus = []
+            _ = last_pose_copy.pop("utime")
+            pos = last_pose_copy.pop("pos")
+            rotation = last_pose_copy.pop("orientation")
+    
+            can_bus.extend(pos)
+            can_bus.extend(rotation)
+    
+            # ⛔ Intentionally fetching from `pose[key]` (not `last_pose_copy`)
+            for key in last_pose_copy.keys():
+                can_bus.extend(pose[key])  # This may fetch newer pose values
+            
+            can_bus.extend([0.0, 0.0])  # pad to 18
+    
+            return np.array(can_bus, dtype=np.float32)[:18]  # Ensure exactly 18 elements
+    
+        except Exception as e:
+            self.ros_interface.get_logger().debug(f"Error getting CAN bus info: {e}")
+            return np.zeros(18, dtype=np.float32)
 
     def pause_callback(self, msg):
         self.pause = msg.data
@@ -215,6 +263,30 @@ class NuscenesVisualizeNode(object):
             marker = self.ros_interface.object_to_marker(box, frame_id='LIDAR_TOP', marker_id=i, duration= 1.2 / self.update_frequency, color=obj_color)
             markers.markers.append(marker)
         self.ros_interface.publish("/nuscenes/bboxes", markers)
+
+        # === Scene Token Publishing ===
+        scene_msg = SceneInfo()
+        scene_msg.header.stamp = self.ros_interface.get_clock().now().to_msg()
+        scene_msg.header.frame_id = "base_link"
+        scene_msg.scene_token = self.current_scene['token']
+        scene_msg.token = self.current_sample['token']
+        scene_msg.prev = self.current_sample['prev']
+        scene_msg.next = self.current_sample['next']
+        scene_msg.sample_token = self.current_sample['token']
+        self.ros_interface.publish("/nuscenes/scene_tokens", scene_msg)
+        
+        # === CAN Bus Publishing ===
+        can_bus_msg = CanBusData()
+        can_bus_data = self._get_can_bus_info(self.current_sample)
+        can_bus_msg.header.stamp = self.ros_interface.get_clock().now().to_msg()
+        can_bus_msg.header.frame_id = "base_link"
+        
+        can_bus_array = Float32MultiArray()
+        can_bus_array.data = can_bus_data.tolist()
+        can_bus_msg.can_bus = can_bus_array
+
+        self.ros_interface.publish("/nuscenes/can_bus", can_bus_msg)
+
 
         self.publishing = not self.pause # if paused, the original images and lidar are latched (as defined in publishers) and we will not re-publish them to save memory access. But we need to re-publish tf and markers
 

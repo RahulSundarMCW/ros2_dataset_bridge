@@ -1,13 +1,17 @@
 <?xml version="1.0"?>
 <launch>
-    <arg name="NUSCENES_DIR" default="/data/nuscene"/>
+    <arg name="NUSCENES_DIR" default="/home/rahul/Autoware/datasets/nuscenes_dataset_mini"/>
     <arg name="NUSCENES_VER" default="v1.0-trainval"/>
+    <arg name="NUSCENES_CAN_BUS_DIR" default="/home/rahul/Autoware/datasets/can_bus"/>
     <arg name="UPDATE_FREQUENCY" default="4.0"/>
+    <arg name="MAX_SWEEPS" default="10"/>
 
     <node pkg="ros2_dataset_bridge" exec="nuscenes_visualize_node" name="nuscenes_visualize_node" output="screen">
         <param name="NUSCENES_DIR" value="$(var NUSCENES_DIR)"/>
         <param name="NUSCENES_VER" value="$(var NUSCENES_VER)"/>
+        <param name="NUSCENES_CAN_BUS_DIR" value="$(var NUSCENES_CAN_BUS_DIR)"/>
         <param name="UPDATE_FREQUENCY" value="$(var UPDATE_FREQUENCY)"/>
+        <param name="MAX_SWEEPS" value="$(var MAX_SWEEPS)"/>
     </node>
     <node pkg="rviz2" exec="rviz2" name="rviz2" args="-d $(find-pkg-share ros2_dataset_bridge)/rviz/nuscenes.rviz"/>
     <node pkg="ros2_dataset_bridge" exec="gui_controller" name="GUI_controller_node" output="screen" respawn="false" respawn_delay="0">
