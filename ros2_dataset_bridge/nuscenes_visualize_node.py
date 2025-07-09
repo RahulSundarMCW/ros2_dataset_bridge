@@ -1,16 +1,22 @@
 #!/usr/bin/env python3
 import numpy as np
-
+import os
+from pyquaternion import Quaternion
 import rclpy
 import cv2
-import os
-from .utils import kitti360_utils
+import glob
+
+import rclpy
+from rclpy.clock import Clock
+import rclpy.duration
+from rclpy.node import Node
+
 from .utils.ros_util import ROSInterface
 from .utils.nuscenes_utils import NuscenesLoader
 from sensor_msgs.msg import CameraInfo, Image, PointCloud2
 from autoware_custom_msgs.msg import SceneInfo, CanBusData
 from std_msgs.msg import Int32, Bool, Float32MultiArray, String
-from visualization_msgs.msg import MarkerArray
+from visualization_msgs.msg import MarkerArray, Marker
 from std_msgs.msg import MultiArrayDimension
 
 """General Class conversion and color definition for Nuscenes
@@ -63,12 +69,14 @@ class NuscenesVisualizeNode(object):
     def __init__(self):
         self.ros_interface = ROSInterface("NuscenesVisualizeNode")
 
-        self.ros_interface.declare_parameter("NUSCENES_DIR", "/data/nuscene")
+        self.ros_interface.declare_parameter("NUSCENES_DIR", "/home/rahul/Autoware/datasets/nuscenes_dataset_mini")
         self.ros_interface.declare_parameter("NUSCENES_VER", "v1.0-trainval")
+        self.ros_interface.declare_parameter("NUSCENES_CAN_BUS_DIR", "/home/rahul/Autoware/datasets/can_bus")
         self.ros_interface.declare_parameter("UPDATE_FREQUENCY", 8.0)
 
         self.nuscenes_dir = self.ros_interface.get_parameter("NUSCENES_DIR").get_parameter_value().string_value
         self.nuscenes_version   = self.ros_interface.get_parameter("NUSCENES_VER").get_parameter_value().string_value
+        self.can_bus_dir = self.ros_interface.get_parameter("NUSCENES_CAN_BUS_DIR").get_parameter_value().string_value
         self.update_frequency = self.ros_interface.get_parameter("UPDATE_FREQUENCY").get_parameter_value().double_value
 
 
@@ -77,6 +85,18 @@ class NuscenesVisualizeNode(object):
         self.ros_interface.create_publisher(SceneInfo, "/nuscenes/scene_tokens", 1)
         self.nusc_loader_helper = NuscenesLoader(version=self.nuscenes_version, dataroot=self.nuscenes_dir, verbose=True)
         self.nusc = self.nusc_loader_helper.get_nusc(logger=self.ros_interface.get_logger())
+
+        # Initialize CAN bus API - directly following the approach in create_data.py
+        try:
+            from nuscenes.can_bus.can_bus_api import NuScenesCanBus
+            # The create_data.py script passes the root path of the CAN bus directory (not requiring can_bus subdirectory)
+            self.nusc_can_bus = NuScenesCanBus(dataroot=os.path.dirname(self.can_bus_dir))
+            scene_files = glob.glob(os.path.join(self.can_bus_dir, "scene-*_pose.json"))
+            self.ros_interface.get_logger().info(f"Found {len(scene_files)} CAN bus scene files")
+            self.ros_interface.get_logger().info(f"Successfully loaded CAN bus API with root: {os.path.dirname(self.can_bus_dir)}")
+        except Exception as e:
+            self.nusc_can_bus = None
+            self.ros_interface.get_logger().error(f"Failed to load CAN bus data: {e}")
         
         print(f"update_frequency={self.update_frequency}")
         self.index = 0
